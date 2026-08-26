@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>Boosta Policy Assistant — Аналітика</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --accent: #FD5732;
+  --accent-soft: #fff1ec;
+  --ink: #1a1a1a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 32px 20px 60px;
+  background: #f5f4f0; color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.wrap { max-width: 920px; margin: 0 auto; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+.subtitle { color: #6b6b68; font-size: 14px; margin: 0 0 28px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 28px; }
+.card {
+  background: #fff; border-radius: 12px; padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.card .label { font-size: 13px; color: #6b6b68; margin: 0 0 6px; }
+.card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+.panel {
+  background: #fff; border-radius: 12px; padding: 20px 22px; margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.panel h2 { font-size: 15px; margin: 0 0 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eee; }
+th { color: #6b6b68; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.02em; }
+tr:last-child td { border-bottom: none; }
+.rank { display: inline-block; width: 22px; color: var(--accent); font-weight: 700; }
+.empty { color: #6b6b68; font-size: 14px; padding: 20px 0; text-align: center; }
+.reload { position: fixed; top: 20px; right: 20px; background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+.reload:hover { opacity: 0.9; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<button class="reload" onclick="location.reload()">Оновити</button>
+<div class="wrap">
+<h1>Boosta Policy Assistant — Аналітика</h1>
+<p class="subtitle" id="subtitle">Завантаження…</p>
+
+<div class="cards">
+<div class="card"><p class="label">Усього використань</p><p class="value" id="totalEvents">—</p></div>
+<div class="card"><p class="label">Унікальних користувачів</p><p class="value" id="uniqueUsers">—</p></div>
+<div class="card"><p class="label">Середньо на людину</p><p class="value" id="avgPerUser">—</p></div>
+</div>
+
+<div class="panel">
+<h2>Використання по днях</h2>
+<canvas id="byDayChart" height="90"></canvas>
+</div>
+
+<div class="two-col">
+<div class="panel">
+<h2>За типом документа</h2>
+<canvas id="byDocTypeChart"></canvas>
+</div>
+<div class="panel">
+<h2>За мовою</h2>
+<canvas id="byLangChart"></canvas>
+</div>
+</div>
+
+<div class="panel">
+<h2>Хто скільки разів користувався</h2>
+<div id="byUserTable"></div>
+</div>
+
+</div>
+
+<script>
+const ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbz9FLti8fjp6P_tzj3Q-QW8LfTjbR62oNen2SMu_ce8bfv_UsjoMUHLeNeNAw5ll90r/exec';
+
+const palette = ['#FD5732', '#1a1a1a', '#FFB199', '#6b6b68', '#FFD9CC', '#a3a19c'];
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function load() {
+  try {
+    const res = await fetch(`${ANALYTICS_URL}?action=summary`);
+    const data = await res.json();
+    render(data);
+  } catch (err) {
+    document.getElementById('subtitle').textContent = 'Не вдалося завантажити дані — перевір ANALYTICS_URL і доступ до Apps Script.';
+    console.error(err);
+  }
+}
+
+function render(data) {
+  const total = data.totalEvents || 0;
+  const unique = data.uniqueUsers || 0;
+  const avg = unique ? (total / unique).toFixed(1) : '0';
+
+  document.getElementById('subtitle').textContent = total
+    ? `Дані станом на зараз, разом ${total} використань.`
+    : 'Даних ще немає — статистика зʼявиться після перших генерацій.';
+  document.getElementById('totalEvents').textContent = total;
+  document.getElementById('uniqueUsers').textContent = unique;
+  document.getElementById('avgPerUser').textContent = avg;
+
+  if (!total) {
+    document.getElementById('byUserTable').innerHTML = '<p class="empty">Поки що порожньо.</p>';
+    return;
+  }
+
+  new Chart(document.getElementById('byDayChart'), {
+    type: 'bar',
+    data: {
+      labels: data.byDay.map(d => d.date),
+      datasets: [{ label: 'Використань', data: data.byDay.map(d => d.count), backgroundColor: '#FD5732', borderRadius: 4 }],
+    },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+  });
+
+  new Chart(document.getElementById('byDocTypeChart'), {
+    type: 'doughnut',
+    data: {
+      labels: data.byDocType.map(d => d.type),
+      datasets: [{ data: data.byDocType.map(d => d.count), backgroundColor: palette }],
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } } } },
+  });
+
+  new Chart(document.getElementById('byLangChart'), {
+    type: 'doughnut',
+    data: {
+      labels: data.byLang.map(d => d.lang),
+      datasets: [{ data: data.byLang.map(d => d.count), backgroundColor: palette }],
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } } } },
+  });
+
+  const rows = data.byUser.map((u, i) => `
+    <tr><td><span class="rank">${i + 1}</span>${esc(u.email || 'Невідомо')}</td><td>${u.count}</td></tr>
+  `).join('');
+  document.getElementById('byUserTable').innerHTML = `
+    <table><thead><tr><th>Користувач</th><th>Використань</th></tr></thead><tbody>${rows}</tbody></table>
+  `;
+}
+
+load();
+</script>
+</body>
+</html>
